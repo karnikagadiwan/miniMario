@@ -11,5 +11,274 @@ public class CoinsPickup : MonoBehaviour
     }
 }
 
+public class EnemyMovement : MonoBehaviour
+{
+    [SerializeField] float moveSpeed = 1f;
+    Rigidbody2D myRigidBody;
+
+    // Use this for initialization
+    void Start()
+    {
+        myRigidBody = GetComponent<Rigidbody2D>();
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        if (IsFacingRight())
+        {
+            myRigidBody.velocity = new Vector2(moveSpeed, 0f);
+        }
+        else
+        {
+            myRigidBody.velocity = new Vector2(-moveSpeed, 0f);
+        }
+    }
+  bool IsFacingRight()
+    {
+        return transform.localScale.x > 0;
+    }
+
+    private void OnTriggerExit2D(Collider2D collision)
+    {
+        transform.localScale = new Vector2(-(Mathf.Sign(myRigidBody.velocity.x)), 1f);
+    }
+}
+
+public class LevelExit : MonoBehaviour
+{
+    [SerializeField] float LevelLoadDelay = 2f;
+    [SerializeField] float LevelExitSlowMoFactor = 0.2f;
+
+    void OnTriggerEnter2D(Collider2D other)
+    {
+        StartCoroutine(LoadNextLevel());
+    }
+
+    IEnumerator LoadNextLevel()
+    {
+        Time.timeScale = LevelExitSlowMoFactor;
+        yield return new WaitForSecondsRealtime(LevelLoadDelay);
+        Time.timeScale = 1f;
+
+        var currentSceneIndex = SceneManager.GetActiveScene().buildIndex;
+        SceneManager.LoadScene(currentSceneIndex + 1);
+    }
+
+}
+
+public class player : MonoBehaviour
+{
+    // Start is called before the first frame update
+
+    [SerializeField] float runSpeed = 5f;
+    [SerializeField] float jumpSpeed = 5f;
+    [SerializeField] float climbSpeed = 5f;
+    [SerializeField] Vector2 deathKick = new Vector2(25f, 25f);
+
+
+    // State
+    bool isAlive = true;
+
+    Rigidbody2D myRigidBody;
+
+    Animator myAnimator;
+
+    Collider2D myCollider2D;
+
+    CapsuleCollider2D myBodyCollider;
+
+    BoxCollider2D myFeet;
+
+    float gravityScaleAtStart;
+
+    // Use this for initialization
+    void Start()
+    {
+        myRigidBody = GetComponent<Rigidbody2D>();
+        myAnimator = GetComponent<Animator>();
+        myCollider2D = GetComponent<Collider2D>();
+        myBodyCollider = GetComponent<CapsuleCollider2D>();
+        myFeet = GetComponent<BoxCollider2D>();
+        gravityScaleAtStart = myRigidBody.gravityScale;
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        if (!isAlive) { return; }
+        Run();
+        Jump();
+        FlipSprite();
+        ClimbLadder();
+        Die();
+
+    }
+     private void Run()
+    {
+        float controlThrow = CrossPlatformInputManager.GetAxis("Horizontal"); // value is betweeen -1 to +1
+        Vector2 playerVelocity = new Vector2(controlThrow * runSpeed, myRigidBody.velocity.y);
+        myRigidBody.velocity = playerVelocity;
+
+        bool playerHasHorizontalSpeed = Mathf.Abs(myRigidBody.velocity.x) > Mathf.Epsilon;
+        myAnimator.SetBool("Running", playerHasHorizontalSpeed);
+    }
+
+    private void ClimbLadder()
+    {
+        if (!myCollider2D.IsTouchingLayers(LayerMask.GetMask("Climbing")))
+        {
+            myAnimator.SetBool("Climbing", false);
+            myRigidBody.gravityScale = gravityScaleAtStart;
+            return;
+        }
+
+        float controlThrow = CrossPlatformInputManager.GetAxis("Vertical");
+        Vector2 climbVelocity = new Vector2(myRigidBody.velocity.x, controlThrow * climbSpeed);
+        myRigidBody.velocity = climbVelocity;
+        myRigidBody.gravityScale = 0f;
+
+        bool playerHasVerticalSpeed = Mathf.Abs(myRigidBody.velocity.y) > Mathf.Epsilon;
+        myAnimator.SetBool("Climbing", playerHasVerticalSpeed);
+
+    }
+    private void Jump()
+    {
+       if (!myCollider2D.IsTouchingLayers(LayerMask.GetMask("Ground"))) { return; }
+
+        if (CrossPlatformInputManager.GetButtonDown("Jump"))
+        {
+            Vector2 jumpVelocityToAdd = new Vector2(0f, jumpSpeed);
+            myRigidBody.velocity += jumpVelocityToAdd;
+        }
+    }
+
+    private void Die()
+    {
+        if (myBodyCollider.IsTouchingLayers(LayerMask.GetMask("Enemy",  "Hazards")))
+        {
+            isAlive = false;
+            myAnimator.SetTrigger("Dying");
+            GetComponent<Rigidbody2D>().velocity = deathKick;
+            FindObjectOfType<GameSession>().ProcessPlayerDeath();
+        }
+    }
+
+    private void FlipSprite()
+    {
+        bool playerHasHorizontalSpeed = Mathf.Abs(myRigidBody.velocity.x) > Mathf.Epsilon;
+        if (playerHasHorizontalSpeed)
+        {
+            transform.localScale = new Vector2(Mathf.Sign(myRigidBody.velocity.x), 1f);
+        }
+    }
+
+
+}
+
+public class VerticalWave : MonoBehaviour
+{
+    // Start is called before the first frame update
+    [Tooltip("Game units per second")]
+    [SerializeField] float scrollRate = 0.2f;
+
+    void Update()
+    {
+        float yMove = scrollRate * Time.deltaTime;
+        transform.Translate(new Vector2(0f, yMove));
+    }
+}
+
+public class GameSession : MonoBehaviour
+{
+    // Start is called before the first frame update
+    [SerializeField] int playerLives = 3;
+
+    [SerializeField] int score = 0;
+
+    [SerializeField] Text livesText;
+    [SerializeField] Text scoreText;
+
+
+    private void Awake()
+    {
+        int numGameSessions = FindObjectsOfType<GameSession>().Length;
+        if (numGameSessions > 1)
+        {
+            Destroy(gameObject);
+        }
+        else
+        {
+            DontDestroyOnLoad(gameObject);
+        }
+    }
+        void Start()
+        {
+
+        livesText.text = playerLives.ToString();
+        scoreText.text = score.ToString();
+
+    }
+    public void AddToScore(int pointsToAdd)
+    {
+        score += pointsToAdd;
+        scoreText.text = score.ToString();
+    }
+
+
+    public void ProcessPlayerDeath()
+        {
+            if (playerLives > 1)
+            {
+                TakeLife();
+            }
+            else
+            {
+                ResetGameSession();
+            }
+        }
+
+        private void TakeLife()
+        {
+            playerLives--;
+            var currentSceneIndex = SceneManager.GetActiveScene().buildIndex;
+            SceneManager.LoadScene(currentSceneIndex);
+           livesText.text = playerLives.ToString();
+    }
+
+        private void ResetGameSession()
+        {
+            SceneManager.LoadScene(0);
+            Destroy(gameObject);
+        }
+    }
+public class Menu : MonoBehaviour
+{
+    // Start is called before the first frame update
+
+    public void StartFirstLevel()
+    {
+        SceneManager.LoadScene(1);
+    }
+
+    public void LoadMainMenu()
+    {
+        SceneManager.LoadScene(0);
+    }
+}
+
+public class Pickup : MonoBehaviour
+{
+    // Start is called before the first frame update
+    [SerializeField] AudioClip coinPickUpSFX;
+    [SerializeField] int pointsForCoinPickup = 100;
+
+    private void OnTriggerEnter2D(Collider2D collision)
+    {
+        FindObjectOfType<GameSession>().AddToScore(pointsForCoinPickup);
+        AudioSource.PlayClipAtPoint(coinPickUpSFX, Camera.main.transform.position);
+        Destroy(gameObject);
+    }
+}
 
 
